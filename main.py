@@ -38,9 +38,10 @@ class VolumeBackup:
 def decompress_lz4(block_path: Path):
     return lz4.frame.decompress(block_path.read_bytes())
 
-def write_block_to_buffer(offset: int, block_data: bytes, buffer: BytesIO) -> None:
-    buffer.seek(offset)
-    buffer.write(block_data)
+def write_block_to_buffer(offset: int, block_data: bytes, file_path: Path) -> None:
+    with open(file_path, "r+b") as f:
+        f.seek(offset)
+        f.write(block_data)
     
 def find_backup_path(backup_root, backup_target) -> Path:
     try: 
@@ -85,22 +86,22 @@ def main():
 
     if Path(args.outfile).exists():
         raise ValueError(f"Output file {args.outfile} already exists")
+    
+    outfile = Path(args.outfile)
+    outfile.touch()
 
     backup_root = Path(args.backup_root) / "backupstore"
     path = find_backup_path(backup_root, args.target)
     volume_backup = read_backups(path)
-    buffer = BytesIO(b"\0" * volume_backup.backups[-1].size)
 
     for backup in volume_backup.backups:
         for block in backup.blocks:
+            print(f"Processing block {block.offset} for backup {args.target} [{backup.timestamp}]")
             block_path = block.resolve_block_path(volume_backup.backup_path)
             if block_path is None:
                 raise ValueError(f"Could not find block for {block}")
             block_data = decompress_lz4(block_path)
-            write_block_to_buffer(block.offset, block_data, buffer)
-
-    with open(args.outfile, "wb") as f:
-        f.write(buffer.getvalue())
+            write_block_to_buffer(block.offset, block_data, outfile)
 
 if __name__ == "__main__":
     main()
